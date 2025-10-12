@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Products API</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .endpoint {
+            background: #f8f9fa;
+            padding: 15px;
+            margin: 10px 0;
+            border-left: 4px solid #007bff;
+            border-radius: 5px;
+        }
+        .method {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        .get { background: #d4edda; color: #155724; }
+        .post { background: #d1ecf1; color: #0c5460; }
+        .put { background: #fff3cd; color: #856404; }
+        .delete { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📦 Products REST API</h1>
+        <p>This is a REST API for managing products and categories with file upload support.</p>
+        
+        <h2>🚀 Available Endpoints</h2>
+        
+        <div class="endpoint">
+            <span class="method get">GET</span>
+            <strong>/products</strong> - Get all products
+        </div>
+        
+        <div class="endpoint">
+            <span class="method post">POST</span>
+            <strong>/products</strong> - Create new product (with image upload)
+        </div>
+        
+        <div class="endpoint">
+            <span class="method get">GET</span>
+            <strong>/categories</strong> - Get all categories
+        </div>
+        
+        <div class="endpoint">
+            <span class="method post">POST</span>
+            <strong>/categories</strong> - Create new category (with image upload)
+        </div>
+        
+        <p>For full API documentation, visit: <a href="/">/</a></p>
+    </div>
+</body>
+</html>

@@ -1,18 +1,19 @@
 {
   "name": "product-server",
   "version": "1.0.0",
-  "description": "REST API for product management",
+  "description": "REST API for product management with database and file upload",
   "type": "module",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "init-db": "node init-db.js"
   },
-  "keywords": ["express", "rest-api", "products"],
-  "author": "Your Name",
-  "license": "ISC",
   "dependencies": {
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "multer": "^1.4.5-lts.1",
+    "path": "^0.12.7",
+    "sqlite3": "^5.1.7"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

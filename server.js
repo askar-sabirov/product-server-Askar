@@ -1,250 +1,90 @@
 import express from 'express';
+import productController, { upload as productUpload } from './controllers/productController.js';
+import categoryController, { upload as categoryUpload } from './controllers/categoryController.js';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 8000;
 
-// Middleware для парсинга JSON
+// Middleware
 app.use(express.json());
 
-// Массив товаров (временное хранилище)
-let products = [
-    {
-        id: 1,
-        name: "iPhone 15",
-        category: "Electronics",
-        price: 999,
-        description: "Latest Apple smartphone",
-        inStock: true
-    },
-    {
-        id: 2,
-        name: "MacBook Pro",
-        category: "Electronics",
-        price: 1999,
-        description: "Professional laptop",
-        inStock: true
-    },
-    {
-        id: 3,
-        name: "AirPods Pro",
-        category: "Electronics",
-        price: 249,
-        description: "Wireless headphones",
-        inStock: false
-    }
-];
+// 🔧 Раздача статических файлов
+app.use('/uploads', express.static(join(__dirname, 'uploads')));
+app.use('/public', express.static(join(__dirname, 'public')));
 
-// Вспомогательные функции
-const generateId = () => {
-    return products.length > 0 ? Math.max(...products.map(p => p.id)) + 1 : 1;
-};
+// 📋 Маршруты для продуктов
+app.get('/products', productController.getAllProducts);
+app.get('/products/:id', productController.getProductById);
+app.post('/products', productUpload.single('image'), productController.createProduct);
+app.put('/products/:id', productUpload.single('image'), productController.updateProduct);
+app.delete('/products/:id', productController.deleteProduct);
+app.get('/categories/:categoryId/products', productController.getProductsByCategory);
+app.get('/uploads/products/:filename', productController.getProductImage);
 
-// 📋 1. Получить все товары
-app.get('/products', (req, res) => {
-    try {
-        res.status(200).json({
-            success: true,
-            count: products.length,
-            data: products
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Server error',
-            error: error.message
-        });
-    }
-});
+// 📁 Маршруты для категорий
+app.get('/categories', categoryController.getAllCategories);
+app.get('/categories/:id', categoryController.getCategoryById);
+app.post('/categories', categoryUpload.single('image'), categoryController.createCategory);
+app.put('/categories/:id', categoryUpload.single('image'), categoryController.updateCategory);
+app.delete('/categories/:id', categoryController.deleteCategory);
+app.get('/uploads/categories/:filename', categoryController.getCategoryImage);
 
-// 🔍 2. Получить товар по ID
-app.get('/products/:id', (req, res) => {
-    try {
-        const id = parseInt(req.params.id);
-        
-        if (isNaN(id)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid ID format'
-            });
-        }
-
-        const product = products.find(p => p.id === id);
-
-        if (!product) {
-            return res.status(404).json({
-                success: false,
-                message: 'Product not found'
-            });
-        }
-
-        res.status(200).json({
-            success: true,
-            data: product
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Server error',
-            error: error.message
-        });
-    }
-});
-
-// ➕ 3. Добавить новый товар
-app.post('/products', (req, res) => {
-    try {
-        const { name, category, price, description, inStock } = req.body;
-
-        // Валидация обязательных полей
-        if (!name || !category || !price) {
-            return res.status(400).json({
-                success: false,
-                message: 'Name, category and price are required fields'
-            });
-        }
-
-        // Валидация цены
-        if (isNaN(price) || price < 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Price must be a positive number'
-            });
-        }
-
-        const newProduct = {
-            id: generateId(),
-            name: name.toString().trim(),
-            category: category.toString().trim(),
-            price: parseFloat(price),
-            description: description ? description.toString().trim() : '',
-            inStock: inStock !== undefined ? Boolean(inStock) : true
-        };
-
-        products.push(newProduct);
-
-        res.status(201).json({
-            success: true,
-            message: 'Product created successfully',
-            data: newProduct
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Server error',
-            error: error.message
-        });
-    }
-});
-
-// ✏️ 4. Обновить товар по ID
-app.put('/products/:id', (req, res) => {
-    try {
-        const id = parseInt(req.params.id);
-        
-        if (isNaN(id)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid ID format'
-            });
-        }
-
-        const productIndex = products.findIndex(p => p.id === id);
-
-        if (productIndex === -1) {
-            return res.status(404).json({
-                success: false,
-                message: 'Product not found'
-            });
-        }
-
-        const { name, category, price, description, inStock } = req.body;
-
-        // Валидация цены если она передана
-        if (price !== undefined && (isNaN(price) || price < 0)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Price must be a positive number'
-            });
-        }
-
-        // Обновляем только переданные поля
-        const updatedProduct = {
-            ...products[productIndex],
-            ...(name !== undefined && { name: name.toString().trim() }),
-            ...(category !== undefined && { category: category.toString().trim() }),
-            ...(price !== undefined && { price: parseFloat(price) }),
-            ...(description !== undefined && { description: description.toString().trim() }),
-            ...(inStock !== undefined && { inStock: Boolean(inStock) })
-        };
-
-        products[productIndex] = updatedProduct;
-
-        res.status(200).json({
-            success: true,
-            message: 'Product updated successfully',
-            data: updatedProduct
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Server error',
-            error: error.message
-        });
-    }
-});
-
-// 🗑️ 5. Удалить товар по ID
-app.delete('/products/:id', (req, res) => {
-    try {
-        const id = parseInt(req.params.id);
-        
-        if (isNaN(id)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid ID format'
-            });
-        }
-
-        const productIndex = products.findIndex(p => p.id === id);
-
-        if (productIndex === -1) {
-            return res.status(404).json({
-                success: false,
-                message: 'Product not found'
-            });
-        }
-
-        const deletedProduct = products.splice(productIndex, 1)[0];
-
-        res.status(200).json({
-            success: true,
-            message: 'Product deleted successfully',
-            data: deletedProduct
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Server error',
-            error: error.message
-        });
-    }
-});
-
-// ℹ️ 6. Информация об API
+// ℹ️ Информация об API
 app.get('/', (req, res) => {
     res.json({
-        message: 'Products API',
+        message: 'Products API with Database and File Upload',
         endpoints: {
-            'GET /products': 'Get all products',
-            'GET /products/:id': 'Get product by ID',
-            'POST /products': 'Create new product',
-            'PUT /products/:id': 'Update product by ID',
-            'DELETE /products/:id': 'Delete product by ID'
+            // Продукты
+            'GET /products': 'Get all products with categories',
+            'GET /products/:id': 'Get product by ID with category info',
+            'POST /products': 'Create new product (with image upload)',
+            'PUT /products/:id': 'Update product (with image upload)',
+            'DELETE /products/:id': 'Delete product',
+            'GET /categories/:categoryId/products': 'Get products by category',
+            'GET /uploads/products/:filename': 'Get product image',
+            
+            // Категории
+            'GET /categories': 'Get all categories',
+            'GET /categories/:id': 'Get category by ID',
+            'POST /categories': 'Create new category (with image upload)',
+            'PUT /categories/:id': 'Update category (with image upload)',
+            'DELETE /categories/:id': 'Delete category',
+            'GET /uploads/categories/:filename': 'Get category image',
+            
+            // Статические файлы
+            'GET /uploads/*': 'Access uploaded files',
+            'GET /public/*': 'Access public static files'
         }
     });
 });
 
-// ✅ ИСПРАВЛЕННЫЙ КОД: Обработка несуществующих маршрутов
+// Обработка ошибок multer
+app.use((error, req, res, next) => {
+    if (error instanceof multer.MulterError) {
+        if (error.code === 'LIMIT_FILE_SIZE') {
+            return res.status(400).json({
+                success: false,
+                message: 'File too large. Maximum size is 5MB.'
+            });
+        }
+    }
+    
+    if (error) {
+        return res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+    
+    next();
+});
+
+// Обработка несуществующих маршрутов
 app.use((req, res) => {
     res.status(404).json({
         success: false,
@@ -256,4 +96,7 @@ app.use((req, res) => {
 app.listen(PORT, () => {
     console.log(`🚀 Server is running on port ${PORT}`);
     console.log(`📚 API Documentation: http://localhost:${PORT}`);
+    console.log(`💾 Using SQLite database`);
+    console.log(`📁 File upload enabled: /uploads/`);
+    console.log(`🌐 Static files: /public/`);
 });
