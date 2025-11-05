@@ -2,12 +2,11 @@ import Database from '../db.js';
 import bcrypt from 'bcryptjs';
 
 class User {
-    // Найти пользователя по ID
     static async findById(id) {
         try {
             const db = new Database();
             const users = await db.query(
-                'SELECT id, username, email, first_name, last_name, avatar, role, is_active, created_at FROM users WHERE id = ?',
+                'SELECT id, username, email, first_name, last_name, avatar, role, is_active, is_verified, email_verification_token, password_reset_token, password_reset_expires, created_at FROM users WHERE id = ?',
                 [id]
             );
             await db.close();
@@ -17,7 +16,6 @@ class User {
         }
     }
 
-    // Найти пользователя по email
     static async findByEmail(email) {
         try {
             const db = new Database();
@@ -29,11 +27,13 @@ class User {
         }
     }
 
-    // Найти пользователя по username
-    static async findByUsername(username) {
+    static async findByVerificationToken(token) {
         try {
             const db = new Database();
-            const users = await db.query('SELECT * FROM users WHERE username = ?', [username]);
+            const users = await db.query(
+                'SELECT * FROM users WHERE email_verification_token = ?',
+                [token]
+            );
             await db.close();
             return users.length > 0 ? users[0] : null;
         } catch (error) {
@@ -41,92 +41,51 @@ class User {
         }
     }
 
-    // Создать нового пользователя
+    static async findByResetToken(token) {
+        try {
+            const db = new Database();
+            const users = await db.query(
+                'SELECT * FROM users WHERE password_reset_token = ? AND password_reset_expires > ?',
+                [token, new Date()]
+            );
+            await db.close();
+            return users.length > 0 ? users[0] : null;
+        } catch (error) {
+            throw error;
+        }
+    }
+
     static async create(userData) {
         try {
             const { username, email, password, first_name, last_name } = userData;
-            
-            // Хешируем пароль
             const hashedPassword = await bcrypt.hash(password, 12);
+            const emailVerificationToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
             
             const db = new Database();
             const result = await db.run(
-                'INSERT INTO users (username, email, password, first_name, last_name) VALUES (?, ?, ?, ?, ?)',
-                [username, email, hashedPassword, first_name || '', last_name || '']
+                'INSERT INTO users (username, email, password, first_name, last_name, email_verification_token) VALUES (?, ?, ?, ?, ?, ?)',
+                [username, email, hashedPassword, first_name || '', last_name || '', emailVerificationToken]
             );
             
             const newUser = await db.query(
-                'SELECT id, username, email, first_name, last_name, avatar, role, is_active, created_at FROM users WHERE id = ?',
+                'SELECT id, username, email, first_name, last_name, avatar, role, is_active, is_verified, created_at FROM users WHERE id = ?',
                 [result.id]
             );
             
             await db.close();
-            return newUser[0];
+            return { ...newUser[0], email_verification_token: emailVerificationToken };
         } catch (error) {
             throw error;
         }
     }
 
-    // Проверить пароль
-    static async checkPassword(plainPassword, hashedPassword) {
-        return await bcrypt.compare(plainPassword, hashedPassword);
-    }
-
-    // Обновить пользователя
-    static async update(id, updateData) {
+    static async verifyEmail(userId) {
         try {
             const db = new Database();
-            const { first_name, last_name, avatar } = updateData;
-            
-            const updateFields = [];
-            const updateValues = [];
-            
-            if (first_name !== undefined) {
-                updateFields.push('first_name = ?');
-                updateValues.push(first_name);
-            }
-            
-            if (last_name !== undefined) {
-                updateFields.push('last_name = ?');
-                updateValues.push(last_name);
-            }
-            
-            if (avatar !== undefined) {
-                updateFields.push('avatar = ?');
-                updateValues.push(avatar);
-            }
-            
-            updateFields.push('updated_at = CURRENT_TIMESTAMP');
-            updateValues.push(id);
-            
             await db.run(
-                `UPDATE users SET ${updateFields.join(', ')} WHERE id = ?`,
-                updateValues
+                'UPDATE users SET is_verified = 1, email_verification_token = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                [userId]
             );
-            
-            const updatedUser = await db.query(
-                'SELECT id, username, email, first_name, last_name, avatar, role, is_active, created_at FROM users WHERE id = ?',
-                [id]
-            );
-            
-            await db.close();
-            return updatedUser[0];
-        } catch (error) {
-            throw error;
-        }
-    }
-
-    // Сменить пароль
-    static async changePassword(id, newPassword) {
-        try {
-            const hashedPassword = await bcrypt.hash(newPassword, 12);
-            const db = new Database();
-            
-            await db.run(
-                'UPDATE users SET password = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-                [hashedPassword, id]
-            );
-            
             await db.close();
             return true;
         } catch (error) {
@@ -134,18 +93,37 @@ class User {
         }
     }
 
-    // Получить всех пользователей (для админа)
-    static async getAll() {
+    static async setResetToken(userId, token, expires) {
         try {
             const db = new Database();
-            const users = await db.query(
-                'SELECT id, username, email, first_name, last_name, avatar, role, is_active, created_at FROM users ORDER BY created_at DESC'
+            await db.run(
+                'UPDATE users SET password_reset_token = ?, password_reset_expires = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                [token, expires, userId]
             );
             await db.close();
-            return users;
+            return true;
         } catch (error) {
             throw error;
         }
+    }
+
+    static async resetPassword(userId, newPassword) {
+        try {
+            const hashedPassword = await bcrypt.hash(newPassword, 12);
+            const db = new Database();
+            await db.run(
+                'UPDATE users SET password = ?, password_reset_token = NULL, password_reset_expires = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                [hashedPassword, userId]
+            );
+            await db.close();
+            return true;
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    static async checkPassword(plainPassword, hashedPassword) {
+        return await bcrypt.compare(plainPassword, hashedPassword);
     }
 }
 

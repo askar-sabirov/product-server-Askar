@@ -1,13 +1,43 @@
 import User from '../models/User.js';
+import EmailService from '../services/emailService.js';
 import { generateToken } from '../middleware/auth.js';
+import multer from 'multer';
+import crypto from 'crypto';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Настройка multer для аватаров
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadPath = join(__dirname, '../uploads/users');
+        cb(null, uploadPath);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, 'avatar-' + uniqueSuffix + '.' + file.originalname.split('.').pop());
+    }
+});
+
+export const upload = multer({
+    storage: storage,
+    limits: { fileSize: 2 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed!'), false);
+        }
+    }
+});
 
 class AuthController {
-    // Регистрация пользователя
     async register(req, res) {
         try {
             const { username, email, password, first_name, last_name } = req.body;
 
-            // Валидация
             if (!username || !email || !password) {
                 return res.status(400).json({
                     success: false,
@@ -15,23 +45,14 @@ class AuthController {
                 });
             }
 
-            if (password.length < 6) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Password must be at least 6 characters long'
-                });
-            }
-
-            // Проверяем, существует ли пользователь
-            const existingUser = await User.findByEmail(email) || await User.findByUsername(username);
+            const existingUser = await User.findByEmail(email);
             if (existingUser) {
                 return res.status(400).json({
                     success: false,
-                    message: 'User with this email or username already exists'
+                    message: 'User with this email already exists'
                 });
             }
 
-            // Создаем пользователя
             const user = await User.create({
                 username,
                 email,
@@ -40,12 +61,16 @@ class AuthController {
                 last_name
             });
 
-            // Генерируем токен
-            const token = generateToken(user.id);
+            // Отправляем email для подтверждения
+            const emailSent = await EmailService.sendVerificationEmail(
+                email, 
+                user.email_verification_token, 
+                username
+            );
 
             res.status(201).json({
                 success: true,
-                message: 'User registered successfully',
+                message: 'User registered successfully. Please check your email for verification.',
                 data: {
                     user: {
                         id: user.id,
@@ -53,9 +78,9 @@ class AuthController {
                         email: user.email,
                         first_name: user.first_name,
                         last_name: user.last_name,
-                        role: user.role
-                    },
-                    token
+                        role: user.role,
+                        is_verified: false
+                    }
                 }
             });
 
@@ -68,12 +93,10 @@ class AuthController {
         }
     }
 
-    // Вход пользователя
     async login(req, res) {
         try {
             const { email, password } = req.body;
 
-            // Валидация
             if (!email || !password) {
                 return res.status(400).json({
                     success: false,
@@ -81,7 +104,6 @@ class AuthController {
                 });
             }
 
-            // Находим пользователя
             const user = await User.findByEmail(email);
             if (!user) {
                 return res.status(401).json({
@@ -90,7 +112,6 @@ class AuthController {
                 });
             }
 
-            // Проверяем активность пользователя
             if (!user.is_active) {
                 return res.status(401).json({
                     success: false,
@@ -98,7 +119,6 @@ class AuthController {
                 });
             }
 
-            // Проверяем пароль
             const isPasswordValid = await User.checkPassword(password, user.password);
             if (!isPasswordValid) {
                 return res.status(401).json({
@@ -107,7 +127,15 @@ class AuthController {
                 });
             }
 
-            // Генерируем токен
+            // Проверяем верификацию email (кроме админа)
+            if (user.role !== 'admin' && !user.is_verified) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Email not verified. Please check your email.',
+                    needsVerification: true
+                });
+            }
+
             const token = generateToken(user.id);
 
             res.json({
@@ -121,7 +149,7 @@ class AuthController {
                         first_name: user.first_name,
                         last_name: user.last_name,
                         role: user.role,
-                        avatar: user.avatar ? `/uploads/users/${user.avatar}` : null
+                        is_verified: user.is_verified
                     },
                     token
                 }
@@ -136,7 +164,6 @@ class AuthController {
         }
     }
 
-    // Получить текущего пользователя
     async getMe(req, res) {
         try {
             res.json({
@@ -154,42 +181,124 @@ class AuthController {
         }
     }
 
-    // Обновить профиль пользователя
+    async verifyEmail(req, res) {
+        try {
+            const { token } = req.query;
+
+            if (!token) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Verification token is required'
+                });
+            }
+
+            const user = await User.findByVerificationToken(token);
+            if (!user) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid or expired verification token'
+                });
+            }
+
+            await User.verifyEmail(user.id);
+
+            res.json({
+                success: true,
+                message: 'Email verified successfully. You can now login.'
+            });
+
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: 'Server error during email verification',
+                error: error.message
+            });
+        }
+    }
+
+    async forgotPassword(req, res) {
+        try {
+            const { email } = req.body;
+
+            if (!email) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Email is required'
+                });
+            }
+
+            const user = await User.findByEmail(email);
+            if (user) {
+                const resetToken = crypto.randomBytes(32).toString('hex');
+                const resetExpires = new Date(Date.now() + 60 * 60 * 1000);
+
+                await User.setResetToken(user.id, resetToken, resetExpires);
+                await EmailService.sendPasswordResetEmail(email, resetToken, user.username);
+            }
+
+            // Всегда возвращаем успех для безопасности
+            res.json({
+                success: true,
+                message: 'If the email exists, password reset instructions have been sent'
+            });
+
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: 'Server error',
+                error: error.message
+            });
+        }
+    }
+
+    async resetPassword(req, res) {
+        try {
+            const { token, newPassword } = req.body;
+
+            if (!token || !newPassword) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Token and new password are required'
+                });
+            }
+
+            const user = await User.findByResetToken(token);
+            if (!user) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid or expired reset token'
+                });
+            }
+
+            await User.resetPassword(user.id, newPassword);
+
+            res.json({
+                success: true,
+                message: 'Password reset successfully'
+            });
+
+        } catch (error) {
+            res.status(500).json({
+                success: false,
+                message: 'Server error during password reset',
+                error: error.message
+            });
+        }
+    }
+
     async updateProfile(req, res) {
         try {
             const { first_name, last_name } = req.body;
-            const avatar = req.file ? req.file.filename : undefined;
+            const userId = req.user.id;
 
-            const updateData = {};
-            if (first_name !== undefined) updateData.first_name = first_name;
-            if (last_name !== undefined) updateData.last_name = last_name;
-            if (avatar !== undefined) updateData.avatar = avatar;
-
-            // Если загружено новое изображение, удаляем старое
-            if (avatar && req.user.avatar) {
-                const fs = await import('fs');
-                const { fileURLToPath } = await import('url');
-                const { dirname, join } = await import('path');
-                
-                const __filename = fileURLToPath(import.meta.url);
-                const __dirname = dirname(__filename);
-                const oldImagePath = join(__dirname, '../uploads/users', req.user.avatar);
-                
-                try {
-                    await fs.promises.unlink(oldImagePath);
-                } catch (err) {
-                    console.log('Could not delete old avatar:', err.message);
-                }
-            }
-
-            const updatedUser = await User.update(req.user.id, updateData);
+            // Базовая реализация - можно расширить
+            const updateData = { first_name, last_name };
+            const updatedUser = await User.update(userId, updateData);
 
             res.json({
                 success: true,
                 message: 'Profile updated successfully',
-                data: {
-                    user: updatedUser
-                }
+                data: { user: updatedUser }
             });
 
         } catch (error) {
@@ -201,10 +310,10 @@ class AuthController {
         }
     }
 
-    // Сменить пароль
     async changePassword(req, res) {
         try {
             const { currentPassword, newPassword } = req.body;
+            const userId = req.user.id;
 
             if (!currentPassword || !newPassword) {
                 return res.status(400).json({
@@ -213,14 +322,6 @@ class AuthController {
                 });
             }
 
-            if (newPassword.length < 6) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'New password must be at least 6 characters long'
-                });
-            }
-
-            // Получаем полные данные пользователя для проверки пароля
             const user = await User.findByEmail(req.user.email);
             const isCurrentPasswordValid = await User.checkPassword(currentPassword, user.password);
 
@@ -231,7 +332,7 @@ class AuthController {
                 });
             }
 
-            await User.changePassword(req.user.id, newPassword);
+            await User.changePassword(userId, newPassword);
 
             res.json({
                 success: true,

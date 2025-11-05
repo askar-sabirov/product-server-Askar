@@ -3,11 +3,10 @@ import User from '../models/User.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here';
 
-// Middleware для проверки JWT токена
 export const authenticateToken = async (req, res, next) => {
     try {
         const authHeader = req.headers['authorization'];
-        const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+        const token = authHeader && authHeader.split(' ')[1];
 
         if (!token) {
             return res.status(401).json({
@@ -26,6 +25,14 @@ export const authenticateToken = async (req, res, next) => {
             });
         }
 
+        // Проверяем верификацию email (кроме админа)
+        if (user.role !== 'admin' && !user.is_verified) {
+            return res.status(403).json({
+                success: false,
+                message: 'Email not verified. Please check your email.'
+            });
+        }
+
         req.user = user;
         next();
     } catch (error) {
@@ -36,7 +43,6 @@ export const authenticateToken = async (req, res, next) => {
     }
 };
 
-// Middleware для проверки роли администратора
 export const requireAdmin = (req, res, next) => {
     if (req.user.role !== 'admin') {
         return res.status(403).json({
@@ -47,18 +53,16 @@ export const requireAdmin = (req, res, next) => {
     next();
 };
 
-// Middleware для проверки роли (user или admin)
-export const requireAuth = (req, res, next) => {
-    if (!req.user) {
-        return res.status(401).json({
+export const requireVerified = (req, res, next) => {
+    if (!req.user.is_verified && req.user.role !== 'admin') {
+        return res.status(403).json({
             success: false,
-            message: 'Authentication required'
+            message: 'Email verification required'
         });
     }
     next();
 };
 
-// Генерация JWT токена
 export const generateToken = (userId) => {
     return jwt.sign({ userId }, JWT_SECRET, { expiresIn: '24h' });
 };

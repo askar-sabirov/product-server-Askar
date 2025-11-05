@@ -1,10 +1,12 @@
-import User from '../models/User.js';
+import Database from '../db.js';
 
 class UserController {
-    // Получить всех пользователей (только для админа)
     async getAllUsers(req, res) {
         try {
-            const users = await User.getAll();
+            const db = new Database();
+            const users = await db.query(
+                'SELECT id, username, email, first_name, last_name, avatar, role, is_active, is_verified, created_at FROM users ORDER BY created_at DESC'
+            );
             
             res.json({
                 success: true,
@@ -12,6 +14,7 @@ class UserController {
                 data: users
             });
 
+            await db.close();
         } catch (error) {
             res.status(500).json({
                 success: false,
@@ -21,13 +24,17 @@ class UserController {
         }
     }
 
-    // Получить пользователя по ID (только для админа)
     async getUserById(req, res) {
         try {
             const { id } = req.params;
-            const user = await User.findById(id);
+            const db = new Database();
+            
+            const users = await db.query(
+                'SELECT id, username, email, first_name, last_name, avatar, role, is_active, is_verified, created_at FROM users WHERE id = ?',
+                [id]
+            );
 
-            if (!user) {
+            if (users.length === 0) {
                 return res.status(404).json({
                     success: false,
                     message: 'User not found'
@@ -36,9 +43,10 @@ class UserController {
 
             res.json({
                 success: true,
-                data: user
+                data: users[0]
             });
 
+            await db.close();
         } catch (error) {
             res.status(500).json({
                 success: false,
@@ -48,13 +56,11 @@ class UserController {
         }
     }
 
-    // Активировать/деактивировать пользователя (только для админа)
     async toggleUserActive(req, res) {
         try {
             const { id } = req.params;
             const db = new Database();
             
-            // Получаем текущий статус пользователя
             const user = await db.query('SELECT is_active FROM users WHERE id = ?', [id]);
             
             if (user.length === 0) {
@@ -71,16 +77,12 @@ class UserController {
                 [newStatus ? 1 : 0, id]
             );
 
-            await db.close();
-
             res.json({
                 success: true,
-                message: `User ${newStatus ? 'activated' : 'deactivated'} successfully`,
-                data: {
-                    is_active: newStatus
-                }
+                message: `User ${newStatus ? 'activated' : 'deactivated'} successfully`
             });
 
+            await db.close();
         } catch (error) {
             res.status(500).json({
                 success: false,
