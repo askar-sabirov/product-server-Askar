@@ -25,7 +25,6 @@ export const authenticateToken = async (req, res, next) => {
             });
         }
 
-        // Проверяем верификацию email (кроме админа)
         if (user.role !== 'admin' && !user.is_verified) {
             return res.status(403).json({
                 success: false,
