@@ -63,4 +63,4 @@ router.get('/export',
     categoryController.exportCategories
 );
 
-export default router;
+export default router
